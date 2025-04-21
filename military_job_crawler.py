@@ -24,9 +24,45 @@ class MilitaryJobCrawler:
         self.total_count = 0
         self.detail_info = []
         self.wait = None
+        self.detail_driver_pool = []  # WebDriver 풀
         
         # 로깅 설정
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+    def create_driver(self):
+        """WebDriver 인스턴스 생성"""
+        options = webdriver.ChromeOptions()
+        options.add_argument('--headless')
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        options.add_argument('--disable-gpu')
+        options.page_load_strategy = 'eager'
+        prefs = {
+            'profile.default_content_setting_values': {
+                'images': 2,
+                'plugins': 2,
+                'javascript': 1
+            }
+        }
+        options.add_experimental_option('prefs', prefs)
+        
+        return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+
+    def initialize_detail_drivers(self, count=2):
+        """상세 정보 수집용 WebDriver 풀 초기화"""
+        for _ in range(count):
+            try:
+                driver = self.create_driver()
+                self.detail_driver_pool.append(driver)
+                time.sleep(1)  # 드라이버 생성 간 간격
+            except Exception as e:
+                logging.error(f"WebDriver 초기화 실패: {e}")
+
+    def get_available_driver(self):
+        """사용 가능한 WebDriver 반환"""
+        if not self.detail_driver_pool:
+            self.initialize_detail_drivers()
+        return self.detail_driver_pool[0] if self.detail_driver_pool else None
 
     def setup_driver(self):
         """Selenium WebDriver 설정"""
@@ -142,50 +178,108 @@ class MilitaryJobCrawler:
 
     def get_job_detail(self, url):
         """채용공고 상세 정보 가져오기"""
-        try:
-            self.driver.get(url)
-            detail_data = {}
-            
-            # 기본 섹션 정보 수집
-            sections = ['병역지정업체정보', '근무조건', '우대사항 및 복리후생']
-            for section in sections:
-                h3_elements = self.driver.find_elements(By.CSS_SELECTOR, 'div.step1 h3')
-                for h3 in h3_elements:
-                    if h3.text.strip() == section:
-                        table = h3.find_element(By.XPATH, './following-sibling::table[1]')
-                        rows = table.find_elements(By.CSS_SELECTOR, 'tbody tr')
-                        for row in rows:
-                            try:
-                                th = row.find_element(By.TAG_NAME, 'th').text.strip()
-                                td = row.find_element(By.TAG_NAME, 'td').text.strip()
-                                detail_data[th] = td
-                            except NoSuchElementException:
-                                continue
+        max_retries = 5  # 재시도 횟수 증가
+        retry_delay = 5  # 대기 시간 증가
+        
+        for attempt in range(max_retries):
+            try:
+                logging.info(f"상세 정보 수집 시작 - URL: {url} (시도: {attempt + 1}/{max_retries})")
+                self.driver.get(url)
+                
+                # 페이지 로딩 대기 시간 증가
+                WebDriverWait(self.driver, 30).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, 'div.step1'))
+                )
+                time.sleep(2)  # 추가 대기 시간
+                
+                detail_data = {
+                    '상세정보_URL': url
+                }
+                
+                sections = ['병역지정업체정보', '근무조건', '우대사항 및 복리후생']
+                for section in sections:
+                    logging.debug(f"'{section}' 섹션 정보 수집 중...")
+                    h3_elements = self.driver.find_elements(By.CSS_SELECTOR, 'div.step1 h3')
+                    for h3 in h3_elements:
+                        if h3.text.strip() == section:
+                            table = h3.find_element(By.XPATH, './following-sibling::table[1]')
+                            rows = table.find_elements(By.CSS_SELECTOR, 'tbody tr')
+                            for row in rows:
+                                try:
+                                    th = row.find_element(By.TAG_NAME, 'th').text.strip()
+                                    td = row.find_element(By.TAG_NAME, 'td').text.strip()
+                                    detail_data[th] = td
+                                except NoSuchElementException:
+                                    continue
 
-            # 비고 정보 수집
-            tables = self.driver.find_elements(By.CLASS_NAME, 'table_row')
-            for table in tables:
-                try:
-                    caption = table.find_element(By.TAG_NAME, 'caption')
-                    caption_text = caption.get_attribute('textContent').strip()
-                    if '비고' in caption_text:
-                        td_elements = table.find_elements(By.CSS_SELECTOR, 'tbody tr td')
-                        bigo_text = ' '.join([td.text.strip() for td in td_elements if td.text.strip()])
-                        if bigo_text:
-                            detail_data['비고'] = bigo_text
-                        break
-                except NoSuchElementException:
+                # 비고 정보 수집
+                tables = self.driver.find_elements(By.CLASS_NAME, 'table_row')
+                for table in tables:
+                    try:
+                        caption = table.find_element(By.TAG_NAME, 'caption')
+                        if '비고' in caption.get_attribute('textContent').strip():
+                            td_elements = table.find_elements(By.CSS_SELECTOR, 'tbody tr td')
+                            bigo_text = ' '.join([td.text.strip() for td in td_elements if td.text.strip()])
+                            if bigo_text:
+                                detail_data['비고'] = bigo_text
+                            break
+                    except NoSuchElementException:
+                        continue
+                
+                # 데이터 검증
+                if len(detail_data) <= 1:  # URL만 있는 경우
+                    raise Exception("상세 정보가 충분히 수집되지 않았습니다.")
+                
+                logging.info(f"상세 정보 수집 완료 - URL: {url}")
+                return detail_data
+                
+            except Exception as e:
+                logging.error(f"상세 정보 가져오기 실패 (URL: {url}, 시도: {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
                     continue
-            
-            return detail_data
-        except Exception as e:
-            logging.error(f"상세 정보 가져오기 실패: {e}")
-            return None
+                return {'상세정보_URL': url}
 
     def process_job_details(self, urls):
-        """병렬로 상세 정보 처리"""
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            return list(executor.map(self.get_job_detail, urls))
+        """순차적으로 상세 정보 처리"""
+        # 중복 URL 제거하되 순서 유지
+        seen = set()
+        unique_urls = [url for url in urls if not (url in seen or seen.add(url))]
+        total_urls = len(unique_urls)
+        
+        logging.info(f"총 {total_urls}개의 상세 정보 수집 시작")
+        results = []
+        
+        for idx, url in enumerate(unique_urls, 1):
+            result = self.get_job_detail(url)
+            results.append(result)
+            logging.info(f"진행률: {idx}/{total_urls} ({(idx/total_urls*100):.1f}%)")
+            time.sleep(3)  # 요청 간 간격
+        
+        # URL을 키로 사용하여 결과를 매핑
+        url_to_detail = {result['상세정보_URL']: result for result in results}
+        
+        # 원래 URL 순서대로 결과 반환
+        final_results = [url_to_detail[url] for url in urls]
+        
+        # 결과 검증
+        successful_count = sum(1 for result in final_results if len(result) > 1)
+        logging.info(f"상세 정보 수집 완료 (성공: {successful_count}/{len(final_results)})")
+        
+        return final_results
+
+    def cleanup_drivers(self):
+        """WebDriver 정리"""
+        for driver in self.detail_driver_pool:
+            try:
+                driver.quit()
+            except:
+                pass
+        self.detail_driver_pool.clear()
+
+    def __del__(self):
+        """소멸자에서 모든 WebDriver 정리"""
+        self.cleanup_drivers()
 
     def get_pagination_info(self):
         """페이지네이션 정보 가져오기"""
@@ -233,6 +327,7 @@ class MilitaryJobCrawler:
                 return
             
             processed_pages = set()
+            processed_count = 0
             
             while len(self.job_data) < self.total_count:
                 headers, rows = self.get_job_list()
@@ -240,7 +335,8 @@ class MilitaryJobCrawler:
                     break
                 
                 self.job_data.extend(rows)
-                logging.info(f"현재 수집된 데이터: {len(self.job_data)}/{self.total_count}")
+                processed_count += len(rows)
+                logging.info(f"기본 정보 수집 진행률: {processed_count}/{self.total_count} ({(processed_count/self.total_count*100):.1f}%)")
                 
                 current_page, other_pages = self.get_pagination_info()
                 if not current_page or not other_pages:
@@ -259,8 +355,9 @@ class MilitaryJobCrawler:
                 if not next_page_found:
                     break
             
-            # 상세 정보 수집 (병렬 처리)
+            # 상세 정보 수집 (순차적 처리)
             urls = [row[-1] for row in self.job_data]
+            logging.info(f"총 {len(urls)}개의 상세 정보 수집 시작")
             self.detail_info = self.process_job_details(urls)
             
             # 데이터 저장
@@ -283,18 +380,38 @@ class MilitaryJobCrawler:
             os.makedirs(output_dir, exist_ok=True)
             current_time = datetime.now().strftime('%Y%m%d_%H%M%S')
             
+            # URL 중복 체크
+            urls = [row[-1] for row in self.job_data]
+            duplicate_urls = [url for url in urls if urls.count(url) > 1]
+            if duplicate_urls:
+                logging.warning(f"기본 정보에서 중복된 URL이 {len(set(duplicate_urls))}개 발견되었습니다.")
+            
             # 기본 정보 저장
             basic_filename = f"{output_dir}/military_jobs_basic_{current_time}.csv"
             df_basic = pd.DataFrame(self.job_data, columns=headers)
             df_basic.to_csv(basic_filename, index=False, encoding='utf-8-sig')
-            logging.info(f"기본 정보가 {basic_filename}에 저장되었습니다.")
+            logging.info(f"기본 정보 {len(df_basic)}개가 {basic_filename}에 저장되었습니다.")
 
             # 상세 정보 저장
             if self.detail_info:
                 detail_filename = f"{output_dir}/military_jobs_detail_{current_time}.csv"
                 df_detail = pd.DataFrame(self.detail_info)
+                
+                # URL을 기준으로 데이터 정렬
+                df_basic_urls = df_basic['상세정보_URL'].tolist()
+                df_detail['_sort_index'] = df_detail['상세정보_URL'].map(lambda x: df_basic_urls.index(x))
+                df_detail = df_detail.sort_values('_sort_index').drop('_sort_index', axis=1)
+                
+                # 데이터 검증
+                if len(df_basic) != len(df_detail):
+                    logging.warning(f"기본 정보({len(df_basic)}개)와 상세 정보({len(df_detail)}개)의 데이터 수가 일치하지 않습니다.")
+                
+                mismatched_urls = set(df_basic['상세정보_URL']) - set(df_detail['상세정보_URL'])
+                if mismatched_urls:
+                    logging.warning(f"일치하지 않는 URL이 {len(mismatched_urls)}개 있습니다.")
+                
                 df_detail.to_csv(detail_filename, index=False, encoding='utf-8-sig')
-                logging.info(f"상세 정보가 {detail_filename}에 저장되었습니다.")
+                logging.info(f"상세 정보 {len(df_detail)}개가 {detail_filename}에 저장되었습니다.")
 
         except Exception as e:
             logging.error(f"데이터 저장 중 오류 발생: {e}")
