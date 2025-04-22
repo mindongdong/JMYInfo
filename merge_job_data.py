@@ -17,10 +17,12 @@ def check_files(filenames):
 def normalize_date(date_str):
     """날짜 형식 표준화 (YYYY.MM.DD 추출)"""
     if isinstance(date_str, str):
-        # YYYY-MM-DD 형식 처리
-        if '-' in date_str:
+        # YYYY-MM-DD/YYYY-MM-DD 형식 처리
+        if '/' in date_str and '-' in date_str:
             try:
-                return datetime.strptime(date_str, '%Y-%m-%d').date()
+                # 마지막 날짜(마감일)만 추출
+                deadline = date_str.split('/')[-1]
+                return datetime.strptime(deadline, '%Y-%m-%d').date()
             except ValueError:
                 pass
         
@@ -98,10 +100,12 @@ def extract_deadline(date_str):
     if pd.isna(date_str):
         return None
     
-    # YYYY-MM-DD 형식 처리
-    if isinstance(date_str, str) and '-' in date_str:
+    # YYYY-MM-DD/YYYY-MM-DD 형식 처리
+    if isinstance(date_str, str) and '/' in date_str and '-' in date_str:
         try:
-            return datetime.strptime(date_str, '%Y-%m-%d').date()
+            # 마지막 날짜(마감일)만 추출
+            deadline = date_str.split('/')[-1]
+            return datetime.strptime(deadline, '%Y-%m-%d').date()
         except ValueError:
             pass
     
@@ -146,8 +150,23 @@ def find_similar_jobs(df1, df2, threshold=60):
                 # 날짜 일치 여부 확인
                 date_match = deadline1 == deadline2 if deadline1 and deadline2 else False
                 
-                # 유사도 임계값 조정 및 날짜 일치 여부 고려
-                if (full_score > threshold and company_score > 40) or (date_match and full_score > 50):
+                # 마감일이 같고 유사도가 0보다 크면 같은 공고로 판단
+                if date_match and (full_score > 0 or company_score > 0):
+                    similar_pairs.append({
+                        'df1_index': i,
+                        'df2_index': j,
+                        'full_similarity': full_score,
+                        'company_similarity': company_score,
+                        'date_match': date_match,
+                        'deadline1': deadline1,
+                        'deadline2': deadline2,
+                        'title1': title1,
+                        'title2': title2,
+                        'company1': company1,
+                        'company2': company2
+                    })
+                # 마감일이 다르지만 유사도가 임계값보다 높은 경우
+                elif not date_match and (full_score > threshold and company_score > 40):
                     similar_pairs.append({
                         'df1_index': i,
                         'df2_index': j,
@@ -206,18 +225,18 @@ def merge_similar_jobs(df1, df2, similar_pairs, df1_detail, df2_detail):
 if __name__ == "__main__":
     # 1. 파일 검사
     required_files = [
-        'crawling_results/military_jobs_basic_20250422_150603.csv',
-        'crawling_results/military_jobs_detail_20250422_150603.csv',
-        'crawling_results/rndjob_basic_20250422_151338.csv',
-        'crawling_results/rndjob_detail_20250422_151338.csv'
+        'crawling_results/military_jobs_basic_20250422_222821.csv',
+        'crawling_results/military_jobs_detail_20250422_222821.csv',
+        'crawling_results/rndjob_basic_20250422_221113.csv',
+        'crawling_results/rndjob_detail_20250422_221113.csv'
     ]
     check_files(required_files)
 
     # 2. 데이터 로드 및 전처리
-    military_basic = pd.read_csv('crawling_results/military_jobs_basic_20250422_150603.csv')
-    military_detail = pd.read_csv('crawling_results/military_jobs_detail_20250422_150603.csv')
-    rndjob_basic = pd.read_csv('crawling_results/rndjob_basic_20250422_151338.csv')
-    rndjob_detail = pd.read_csv('crawling_results/rndjob_detail_20250422_151338.csv')
+    military_basic = pd.read_csv('crawling_results/military_jobs_basic_20250422_222821.csv')
+    military_detail = pd.read_csv('crawling_results/military_jobs_detail_20250422_222821.csv')
+    rndjob_basic = pd.read_csv('crawling_results/rndjob_basic_20250422_221113.csv')
+    rndjob_detail = pd.read_csv('crawling_results/rndjob_detail_20250422_221113.csv')
 
     # 컬럼명 확인
     print("\n=== 컬럼명 확인 ===")
