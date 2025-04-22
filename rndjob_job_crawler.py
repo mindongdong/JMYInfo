@@ -59,12 +59,39 @@ class RndJobCrawler:
                 row_data = []
                 # 일반 td 셀들의 텍스트 수집
                 for td in tr.find_all('td'):
-                    # p 태그가 있으면 p 태그의 텍스트를, 없으면 td의 텍스트를 사용
-                    p_tag = td.find('p')
-                    if p_tag:
-                        row_data.append(p_tag.text.strip())
+                    # class="num"인 td의 경우 div 태그 내부의 텍스트도 수집
+                    if td.get('class') and 'num' in td.get('class'):
+                        div_tag = td.find('div', class_='ddata')
+                        if div_tag:
+                            # div 내부의 모든 텍스트를 수집
+                            text_content = div_tag.get_text(strip=True)
+                            # 날짜 형식 변환 (YYYY.MM.DDYYYY.MM.DD -> YYYY-MM-DD/YYYY-MM-DD)
+                            if len(text_content) == 20 and text_content.count('.') == 4:
+                                try:
+                                    date1 = text_content[:10].replace('.', '-')
+                                    date2 = text_content[10:].replace('.', '-')
+                                    text_content = f"{date1}/{date2}"
+                                except Exception as e:
+                                    logging.warning(f"날짜 형식 변환 중 오류 발생: {e}")
+                            row_data.append(text_content)
+                        else:
+                            text_content = td.get_text(strip=True)
+                            # td 내부의 텍스트도 날짜 형식 변환 시도
+                            if len(text_content) == 20 and text_content.count('.') == 4:
+                                try:
+                                    date1 = text_content[:10].replace('.', '-')
+                                    date2 = text_content[10:].replace('.', '-')
+                                    text_content = f"{date1}/{date2}"
+                                except Exception as e:
+                                    logging.warning(f"날짜 형식 변환 중 오류 발생: {e}")
+                            row_data.append(text_content)
                     else:
-                        row_data.append(td.text.strip())
+                        # p 태그가 있으면 p 태그의 텍스트를, 없으면 td의 텍스트를 사용
+                        p_tag = td.find('p')
+                        if p_tag:
+                            row_data.append(p_tag.text.strip())
+                        else:
+                            row_data.append(td.text.strip())
                 
                 # URL 추가
                 tit_td = tr.find('td', class_='tit')
