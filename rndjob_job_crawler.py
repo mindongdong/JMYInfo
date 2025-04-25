@@ -64,27 +64,15 @@ class RndJobCrawler:
                         div_tag = td.find('div', class_='ddata')
                         if div_tag:
                             # div 내부의 모든 텍스트를 수집
-                            text_content = div_tag.get_text(strip=True)
+                            text_content = ' '.join([text.strip() for text in div_tag.stripped_strings])
                             # 날짜 형식 변환 (YYYY.MM.DDYYYY.MM.DD -> YYYY-MM-DD/YYYY-MM-DD)
                             if len(text_content) == 20 and text_content.count('.') == 4:
-                                try:
-                                    date1 = text_content[:10].replace('.', '-')
-                                    date2 = text_content[10:].replace('.', '-')
-                                    text_content = f"{date1}/{date2}"
-                                except Exception as e:
-                                    logging.warning(f"날짜 형식 변환 중 오류 발생: {e}")
+                                date1 = text_content[:10].replace('.', '-')
+                                date2 = text_content[10:].replace('.', '-')
+                                text_content = f"{date1}/{date2}"
                             row_data.append(text_content)
                         else:
-                            text_content = td.get_text(strip=True)
-                            # td 내부의 텍스트도 날짜 형식 변환 시도
-                            if len(text_content) == 20 and text_content.count('.') == 4:
-                                try:
-                                    date1 = text_content[:10].replace('.', '-')
-                                    date2 = text_content[10:].replace('.', '-')
-                                    text_content = f"{date1}/{date2}"
-                                except Exception as e:
-                                    logging.warning(f"날짜 형식 변환 중 오류 발생: {e}")
-                            row_data.append(text_content)
+                            row_data.append(td.text.strip())
                     else:
                         # p 태그가 있으면 p 태그의 텍스트를, 없으면 td의 텍스트를 사용
                         p_tag = td.find('p')
@@ -152,6 +140,14 @@ class RndJobCrawler:
                 key = title.text.strip()
                 val = value.find('span').text.strip() if value.find('span') else value.text.strip()
                 job_info[key] = val
+
+        # 모집 분야 및 인원 정보
+        info_list2 = soup.find('ul', class_='info_list2')
+        if info_list2:
+            recruitment_info = []
+            for li in info_list2.find_all('li'):
+                recruitment_info.append(li.text.strip())
+            job_info['모집_분야_및_인원'] = recruitment_info
 
         # 채용공고 상세 내용
         sub_each_divs = soup.find_all('div', class_='sub_each')
