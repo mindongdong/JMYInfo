@@ -76,7 +76,11 @@ class RndJobCrawler:
                     else:
                         # p 태그가 있으면 p 태그의 텍스트를, 없으면 td의 텍스트를 사용
                         p_tag = td.find('p')
-                        if p_tag:
+                        # span 태그들이 있으면 span 태그들의 텍스트를, 없으면 td의 텍스트를 사용
+                        span_tags = td.find_all('span')
+                        if span_tags:
+                            row_data.append(' '.join([span.text.strip() for span in span_tags]))
+                        elif p_tag:
                             row_data.append(p_tag.text.strip())
                         else:
                             row_data.append(td.text.strip())

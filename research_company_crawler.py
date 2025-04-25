@@ -5,6 +5,7 @@ import time
 from datetime import datetime
 import os
 import re
+import logging
 
 class ResearchCompanyCrawler:
     def __init__(self):
@@ -16,6 +17,9 @@ class ResearchCompanyCrawler:
         self.total_count = 0
         self.current_page_list = 1
         self.columns = []
+        
+        # 로깅 설정
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
     def get_page_content(self, url):
         """페이지 내용 가져오기"""
@@ -49,6 +53,31 @@ class ResearchCompanyCrawler:
                 return columns
         return []
 
+    def get_company_detail_info(self, company_id):
+        """회사 상세 정보를 수집합니다."""
+        detail_info = {}
+        
+        # 상세 정보 URL 생성
+        detail_url = f"https://www.rndjob.or.kr/info/company_info.asp?jsno={company_id}"
+        detail_info['상세정보_URL'] = detail_url
+        
+        # 상세 페이지 접근
+        detail_soup = self.get_page_content(detail_url)
+        if detail_soup:
+            # 상세 정보 수집
+            info_dls = detail_soup.find_all('dl', class_='info_dl')
+            for dl in info_dls:
+                for dt, dd in zip(dl.find_all('dt'), dl.find_all('dd')):
+                    key = f"상세_{dt.text.strip()}"
+                    value = dd.text.strip()
+                    detail_info[key] = value
+            
+            logging.info(f"회사 ID {company_id}의 상세 정보 수집 완료")
+        else:
+            logging.error(f"회사 ID {company_id}의 상세 정보 수집 실패")
+        
+        return detail_info
+
     def get_company_rows(self, soup):
         """기업 정보 행 가져오기"""
         rows = []
@@ -57,30 +86,11 @@ class ResearchCompanyCrawler:
             tbody = board_list.find('tbody')
             if tbody:
                 for tr in tbody.find_all('tr'):
-                    row_data = []
-                    detail_url = None  # 상세정보 URL 저장 변수
+                    row_data = {}
                     
-                    for td in tr.find_all('td'):
-                        # 상세정보 링크 찾기
-                        if 'tit' in td.get('class', []):
-                            a_tag = td.find('a')
-                            if a_tag and a_tag.get('href'):
-                                href = a_tag.get('href')
-                                # JavaScript 함수 호출에서 기업 ID 추출
-                                if 'info_pop_open' in href:
-                                    # 정규식을 사용하여 기업 ID 추출
-                                    match = re.search(r"info_pop_open\('([^']+)'\)", href)
-                                    if match:
-                                        company_id = match.group(1)
-                                        detail_url = f"https://www.rndjob.or.kr/info/company_info.asp?jsno={company_id}"
-                                else:
-                                    # 기존의 URL 처리 로직 유지
-                                    if href.startswith('/'):
-                                        detail_url = f"https://www.rndjob.or.kr{href}"
-                                    elif not href.startswith('http'):
-                                        detail_url = f"https://www.rndjob.or.kr/info/{href}"
-                                    else:
-                                        detail_url = href
+                    # 기본 정보 수집
+                    for idx, td in enumerate(tr.find_all('td')):
+                        column_name = self.columns[idx] if idx < len(self.columns) else f'Column_{idx}'
                         
                         # span 안에 또 다른 span이 있는 경우
                         nested_spans = td.find_all('span', recursive=False)
@@ -92,15 +102,32 @@ class ResearchCompanyCrawler:
                                     cell_data.extend([s.text.strip() for s in inner_spans])
                                 else:
                                     cell_data.append(span.text.strip())
-                            row_data.append(' '.join(cell_data))
+                            row_data[column_name] = ' '.join(cell_data)
                         else:
                             # 일반적인 span 처리
                             span = td.find('span')
-                            row_data.append(span.text.strip() if span else td.text.strip())
+                            row_data[column_name] = span.text.strip() if span else td.text.strip()
                     
-                    # 상세정보 URL 추가
-                    row_data.append(detail_url if detail_url else '')
+                    # 상세 정보 링크 찾기 및 회사 ID 추출
+                    apply_td = tr.find('td', class_='apply')
+                    if apply_td:
+                        a_tag = apply_td.find('a')
+                        if a_tag and 'href' in a_tag.attrs:
+                            href = a_tag['href']
+                            # JavaScript 함수에서 회사 ID 추출
+                            match = re.search(r"info_pop_open\('([^']+)'\)", href)
+                            if match:
+                                company_id = match.group(1)
+                                # 상세 정보 수집
+                                detail_info = self.get_company_detail_info(company_id)
+                                # 기본 정보와 상세 정보 병합
+                                row_data.update(detail_info)
+                                
+                                logging.info(f"회사 ID {company_id}의 정보 수집 완료")
+                    
                     rows.append(row_data)
+                    time.sleep(1)  # 서버 부하 방지
+        
         return rows
 
     def get_pagination_info(self, soup):
@@ -131,7 +158,7 @@ class ResearchCompanyCrawler:
 
     def crawl(self):
         """크롤링 실행"""
-        print("크롤링 시작...")
+        logging.info("크롤링 시작...")
         
         # 첫 페이지에서 전체 기업 수와 컬럼명 가져오기
         first_url = f"{self.base_url}?page=1&page_size=50&ODBY=C&BIZC=&BIZF="
@@ -142,8 +169,8 @@ class ResearchCompanyCrawler:
         self.total_count = self.get_total_count(soup)
         self.columns = self.get_table_columns(soup)
         
-        print(f"전체 기업 수: {self.total_count}")
-        print(f"컬럼: {self.columns}")
+        logging.info(f"전체 기업 수: {self.total_count}")
+        logging.info(f"기본 컬럼: {self.columns}")
 
         # 전체 페이지 번호 계산
         all_pages = self.get_all_pages()
@@ -152,45 +179,43 @@ class ResearchCompanyCrawler:
             if len(self.company_data) >= self.total_count:
                 break
                 
-            print(f"페이지 {page_num} 크롤링 중... (현재 {len(self.company_data)}/{self.total_count})")
+            logging.info(f"페이지 {page_num} 크롤링 중... (현재 {len(self.company_data)}/{self.total_count})")
             page_url = f"{self.base_url}?page={page_num}&page_size=50&ODBY=C&BIZC=&BIZF="
             page_soup = self.get_page_content(page_url)
             
             if page_soup:
                 rows = self.get_company_rows(page_soup)
                 self.company_data.extend(rows)
-                time.sleep(1)  # 서버 부하 방지
 
             # 10페이지마다 추가 딜레이
             if page_num % 10 == 0:
-                print(f"\n=== 페이지 {page_num}까지 완료. 잠시 대기... ===\n")
+                logging.info(f"=== 페이지 {page_num}까지 완료. 잠시 대기... ===")
                 time.sleep(3)
 
         # 전체 기업 수에 맞게 데이터 자르기
         self.company_data = self.company_data[:self.total_count]
         
-        print(f"\n크롤링 완료! 총 {len(self.company_data)}개의 기업 정보를 수집했습니다.")
+        logging.info(f"크롤링 완료! 총 {len(self.company_data)}개의 기업 정보를 수집했습니다.")
 
     def save_to_csv(self):
         """수집된 데이터 CSV 파일로 저장"""
         if not self.company_data:
-            print("저장할 데이터가 없습니다.")
+            logging.warning("저장할 데이터가 없습니다.")
             return
 
         # 결과 저장할 디렉토리 생성
         output_dir = 'crawling_results'
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
+        os.makedirs(output_dir, exist_ok=True)
 
         # 현재 시간을 파일명에 포함
         current_time = datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = f"{output_dir}/research_companies_{current_time}.csv"
 
         # DataFrame 생성 및 저장
-        df = pd.DataFrame(self.company_data, columns=self.columns)
+        df = pd.DataFrame(self.company_data)
         df.to_csv(filename, index=False, encoding='utf-8-sig')
-        print(f"크롤링 결과가 {filename}에 저장되었습니다.")
-        print(f"총 {len(self.company_data)}개 기업 정보 저장 완료")
+        logging.info(f"크롤링 결과가 {filename}에 저장되었습니다.")
+        logging.info(f"총 {len(self.company_data)}개 기업 정보 저장 완료")
 
 if __name__ == "__main__":
     crawler = ResearchCompanyCrawler()
