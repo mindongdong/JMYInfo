@@ -61,7 +61,7 @@ class RndJobCrawler:
                 for td in tr.find_all('td'):
                     # class="num"인 td의 경우 div 태그 내부의 텍스트도 수집
                     if td.get('class') and 'num' in td.get('class'):
-                        div_tag = td.find('div', class_='ddata')
+                        div_tag = td.find('div')
                         if div_tag:
                             # div 내부의 모든 텍스트를 수집
                             text_content = ' '.join([text.strip() for text in div_tag.stripped_strings])
@@ -240,6 +240,20 @@ class RndJobCrawler:
         # 기본 정보 저장
         basic_filename = f"{output_dir}/rndjob_basic_{current_time}.csv"
         df_basic = pd.DataFrame(self.basic_data, columns=headers)
+
+        # '등록일/마감일' 컬럼이 있으면 분리하여 추가
+        if '등록일/마감일' in df_basic.columns:
+            # '등록일/마감일' 값을 분리하여 새로운 컬럼 생성
+            df_basic[['등록일', '마감일']] = df_basic['등록일/마감일'].str.split(' ', n=1, expand=True)
+            # 컬럼 순서 조정: 등록일, 마감일을 기존 위치에 삽입
+            insert_idx = headers.index('등록일/마감일')
+            new_columns = list(df_basic.columns)
+            # 등록일, 마감일을 기존 위치에 삽입
+            for col in ['마감일', '등록일']:
+                new_columns.remove(col)
+            new_columns[insert_idx:insert_idx] = ['등록일', '마감일']
+            df_basic = df_basic[new_columns]
+
         df_basic.to_csv(basic_filename, index=False, encoding='utf-8-sig')
         logging.info(f"기본 정보가 {basic_filename}에 저장되었습니다.")
 
