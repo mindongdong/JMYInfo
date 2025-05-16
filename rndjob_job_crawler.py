@@ -136,8 +136,8 @@ class RndJobCrawler:
                         job_info[key] = value
         
         # 채용공고 기본 정보
-        info_list = soup.find('dl', class_='info_list')
-        if info_list:
+        info_lists = soup.find_all('dl', class_='info_list')
+        for info_list in info_lists:
             titles = info_list.find_all('dt')
             values = info_list.find_all('dd')
             for title, value in zip(titles, values):
