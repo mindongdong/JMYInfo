@@ -47,6 +47,11 @@ def process_rnd_jobs(basic_file, detail_file):
     final_df['registration_date'] = merged_df['등록일']
     final_df['deadline'] = merged_df['마감일']
     
+    # Use detail_df columns directly for education, career, region
+    final_df['qualification_education'] = merged_df['학력']
+    final_df['qualification_career'] = merged_df['경력']
+    final_df['region'] = merged_df['지역']
+    
     # Extract employment type from 근무환경
     def extract_employment_type(x):
         try:
@@ -54,32 +59,8 @@ def process_rnd_jobs(basic_file, detail_file):
             return env_dict.get('고용형태', '')
         except:
             return ''
-    
     final_df['qualification_agent'] = merged_df['근무환경'].apply(extract_employment_type)
     
-    # Extract education from 자격사항
-    def extract_education(x):
-        try:
-            quals = ast.literal_eval(x)
-            for qual in quals:
-                if '졸업' in qual:
-                    return qual
-            return ''
-        except:
-            return ''
-    
-    final_df['qualification_education'] = merged_df['자격사항'].apply(extract_education)
-    final_df['qualification_career'] = merged_df['경력']
-    
-    # Extract region from 근무환경
-    def extract_region(x):
-        try:
-            env_dict = ast.literal_eval(x)
-            return env_dict.get('근무지역', '')
-        except:
-            return ''
-    
-    final_df['region'] = merged_df['근무환경'].apply(extract_region)
     final_df['Field'] = merged_df['모집_분야_및_인원']
     
     # Combine 담당업무, 자격사항, and 우대사항 for keywords
@@ -95,7 +76,6 @@ def process_rnd_jobs(basic_file, detail_file):
         except:
             pass
         return keywords
-    
     final_df['keywords_list'] = merged_df.apply(combine_keywords, axis=1)
     final_df['source_info'] = merged_df['상세정보_URL']
     final_df['source_type'] = 'rndjob'  # Add source type for RND jobs
@@ -104,13 +84,13 @@ def process_rnd_jobs(basic_file, detail_file):
 
 def main():
     # Process military jobs
-    military_basic = 'crawling_results/military_jobs_basic_20250422_222821.csv'
-    military_detail = 'crawling_results/military_jobs_detail_20250422_222821.csv'
+    military_basic = 'crawling_results/military_jobs_basic_20250425_162549.csv'
+    military_detail = 'crawling_results/military_jobs_detail_20250425_162549.csv'
     military_df = process_military_jobs(military_basic, military_detail)
     
     # Process RND jobs
-    rnd_basic = 'crawling_results/rndjob_basic_20250514_230627.csv'
-    rnd_detail = 'crawling_results/rndjob_detail_20250514_230627.csv'
+    rnd_basic = 'crawling_results/rndjob_basic_20250516_132248.csv'
+    rnd_detail = 'crawling_results/rndjob_detail_20250516_132248.csv'
     rnd_df = process_rnd_jobs(rnd_basic, rnd_detail)
     
     # Combine both dataframes
