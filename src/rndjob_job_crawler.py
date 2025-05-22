@@ -5,6 +5,7 @@ import time
 from datetime import datetime
 import os
 import logging
+import argparse
 
 class RndJobCrawler:
     def __init__(self):
@@ -182,7 +183,7 @@ class RndJobCrawler:
 
         return job_info
 
-    def crawl(self):
+    def crawl(self, basic_filename=None, detail_filename=None):
         """크롤링을 실행합니다."""
         logging.info("크롤링 시작...")
         soup = self.get_page_content(self.base_url)
@@ -224,45 +225,53 @@ class RndJobCrawler:
 
             time.sleep(2)  # 페이지 간 딜레이
 
-        self.save_to_csv(headers)
+        if basic_filename and detail_filename:
+            self.save_to_csv(headers, basic_filename, detail_filename)
 
-    def save_to_csv(self, headers):
+    def save_to_csv(self, headers, basic_filename, detail_filename):
         """수집된 데이터를 CSV 파일로 저장합니다."""
         if not self.basic_data or not self.detail_data:
             logging.warning("저장할 데이터가 없습니다.")
             return
 
-        # 결과 저장할 디렉토리 생성
-        output_dir = 'crawling_results'
-        os.makedirs(output_dir, exist_ok=True)
-        current_time = datetime.now().strftime('%Y%m%d_%H%M%S')
+        try:
+            # 결과 저장할 디렉토리 생성
+            output_dir = os.path.dirname(basic_filename)
+            os.makedirs(output_dir, exist_ok=True)
 
-        # 기본 정보 저장
-        basic_filename = f"{output_dir}/rndjob_basic_{current_time}.csv"
-        df_basic = pd.DataFrame(self.basic_data, columns=headers)
+            # 기본 정보 저장
+            df_basic = pd.DataFrame(self.basic_data, columns=headers)
 
-        # '등록일/마감일' 컬럼이 있으면 분리하여 추가
-        if '등록일/마감일' in df_basic.columns:
-            # '등록일/마감일' 값을 분리하여 새로운 컬럼 생성
-            df_basic[['등록일', '마감일']] = df_basic['등록일/마감일'].str.split(' ', n=1, expand=True)
-            # 컬럼 순서 조정: 등록일, 마감일을 기존 위치에 삽입
-            insert_idx = headers.index('등록일/마감일')
-            new_columns = list(df_basic.columns)
-            # 등록일, 마감일을 기존 위치에 삽입
-            for col in ['마감일', '등록일']:
-                new_columns.remove(col)
-            new_columns[insert_idx:insert_idx] = ['등록일', '마감일']
-            df_basic = df_basic[new_columns]
+            # '등록일/마감일' 컬럼이 있으면 분리하여 추가
+            if '등록일/마감일' in df_basic.columns:
+                # '등록일/마감일' 값을 분리하여 새로운 컬럼 생성
+                df_basic[['등록일', '마감일']] = df_basic['등록일/마감일'].str.split(' ', n=1, expand=True)
+                # 컬럼 순서 조정: 등록일, 마감일을 기존 위치에 삽입
+                insert_idx = headers.index('등록일/마감일')
+                new_columns = list(df_basic.columns)
+                # 등록일, 마감일을 기존 위치에 삽입
+                for col in ['마감일', '등록일']:
+                    new_columns.remove(col)
+                new_columns[insert_idx:insert_idx] = ['등록일', '마감일']
+                df_basic = df_basic[new_columns]
 
-        df_basic.to_csv(basic_filename, index=False, encoding='utf-8-sig')
-        logging.info(f"기본 정보가 {basic_filename}에 저장되었습니다.")
+            df_basic.to_csv(basic_filename, index=False, encoding='utf-8-sig')
+            logging.info(f"기본 정보가 {basic_filename}에 저장되었습니다.")
 
-        # 상세 정보 저장
-        detail_filename = f"{output_dir}/rndjob_detail_{current_time}.csv"
-        df_detail = pd.DataFrame(self.detail_data)
-        df_detail.to_csv(detail_filename, index=False, encoding='utf-8-sig')
-        logging.info(f"상세 정보가 {detail_filename}에 저장되었습니다.")
+            # 상세 정보 저장
+            df_detail = pd.DataFrame(self.detail_data)
+            df_detail.to_csv(detail_filename, index=False, encoding='utf-8-sig')
+            logging.info(f"상세 정보가 {detail_filename}에 저장되었습니다.")
+
+        except Exception as e:
+            logging.error(f"데이터 저장 중 오류 발생: {e}")
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='R&D Job Crawler')
+    parser.add_argument('--basic-output', required=True, help='Output filename for basic job information')
+    parser.add_argument('--detail-output', required=True, help='Output filename for detailed job information')
+    
+    args = parser.parse_args()
+    
     crawler = RndJobCrawler()
-    crawler.crawl() 
+    crawler.crawl(basic_filename=args.basic_output, detail_filename=args.detail_output) 

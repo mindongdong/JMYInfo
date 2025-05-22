@@ -11,10 +11,10 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import Select
-from webdriver_manager.chrome import ChromeDriverManager
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from concurrent.futures import ThreadPoolExecutor
 import logging
+import argparse
 
 class MilitaryJobCrawler:
     def __init__(self):
@@ -36,17 +36,23 @@ class MilitaryJobCrawler:
         options.add_argument('--no-sandbox')
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument('--disable-gpu')
+        options.add_argument('--window-size=1920,1080')
         options.page_load_strategy = 'eager'
+        options.binary_location = '/usr/bin/chromium'  # Chromium 바이너리 위치 지정
+        
+        # 성능 최적화를 위한 설정
         prefs = {
             'profile.default_content_setting_values': {
-                'images': 2,
-                'plugins': 2,
-                'javascript': 1
+                'images': 2,  # 이미지 로딩 비활성화
+                'plugins': 2,  # 플러그인 비활성화
+                'javascript': 1  # JavaScript는 필요하므로 활성화
             }
         }
         options.add_experimental_option('prefs', prefs)
         
-        return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+        # ChromeDriver 경로 직접 지정
+        service = Service('/usr/local/bin/chromedriver')
+        return webdriver.Chrome(service=service, options=options)
 
     def initialize_detail_drivers(self, count=2):
         """상세 정보 수집용 WebDriver 풀 초기화"""
@@ -72,6 +78,7 @@ class MilitaryJobCrawler:
         options.add_argument('--disable-dev-shm-usage')
         options.add_argument('--disable-gpu')
         options.add_argument('--window-size=1920,1080')
+        options.binary_location = '/usr/bin/chromium'  # Chromium 바이너리 위치 지정
         
         # 성능 최적화를 위한 설정
         options.page_load_strategy = 'eager'
@@ -84,7 +91,9 @@ class MilitaryJobCrawler:
         }
         options.add_experimental_option('prefs', prefs)
         
-        self.driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+        # ChromeDriver 경로 직접 지정
+        service = Service('/usr/local/bin/chromedriver')
+        self.driver = webdriver.Chrome(service=service, options=options)
         self.wait = WebDriverWait(self.driver, 10)
 
     def wait_and_find_element(self, by, value, timeout=10):
@@ -313,7 +322,7 @@ class MilitaryJobCrawler:
             logging.error(f"페이지네이션 정보 가져오기 실패: {e}")
             return None, []
 
-    def crawl(self):
+    def crawl(self, basic_filename=None, detail_filename=None):
         """크롤링 실행"""
         logging.info("크롤링 시작...")
         
@@ -361,7 +370,8 @@ class MilitaryJobCrawler:
             self.detail_info = self.process_job_details(urls)
             
             # 데이터 저장
-            self.save_to_csv(headers)
+            if basic_filename and detail_filename:
+                self.save_to_csv(headers, basic_filename, detail_filename)
             
         except Exception as e:
             logging.error(f"크롤링 중 오류 발생: {e}")
@@ -369,16 +379,15 @@ class MilitaryJobCrawler:
             if self.driver:
                 self.driver.quit()
 
-    def save_to_csv(self, headers):
+    def save_to_csv(self, headers, basic_filename, detail_filename):
         """수집된 데이터 CSV 파일로 저장"""
         if not self.job_data:
             logging.warning("저장할 데이터가 없습니다.")
             return
 
         try:
-            output_dir = 'crawling_results'
+            output_dir = os.path.dirname(basic_filename)
             os.makedirs(output_dir, exist_ok=True)
-            current_time = datetime.now().strftime('%Y%m%d_%H%M%S')
             
             # URL 중복 체크
             urls = [row[-1] for row in self.job_data]
@@ -387,14 +396,12 @@ class MilitaryJobCrawler:
                 logging.warning(f"기본 정보에서 중복된 URL이 {len(set(duplicate_urls))}개 발견되었습니다.")
             
             # 기본 정보 저장
-            basic_filename = f"{output_dir}/military_jobs_basic_{current_time}.csv"
             df_basic = pd.DataFrame(self.job_data, columns=headers)
             df_basic.to_csv(basic_filename, index=False, encoding='utf-8-sig')
             logging.info(f"기본 정보 {len(df_basic)}개가 {basic_filename}에 저장되었습니다.")
 
             # 상세 정보 저장
             if self.detail_info:
-                detail_filename = f"{output_dir}/military_jobs_detail_{current_time}.csv"
                 df_detail = pd.DataFrame(self.detail_info)
                 
                 # URL을 기준으로 데이터 정렬
@@ -417,5 +424,11 @@ class MilitaryJobCrawler:
             logging.error(f"데이터 저장 중 오류 발생: {e}")
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Military Job Crawler')
+    parser.add_argument('--basic-output', required=True, help='Output filename for basic job information')
+    parser.add_argument('--detail-output', required=True, help='Output filename for detailed job information')
+    
+    args = parser.parse_args()
+    
     crawler = MilitaryJobCrawler()
-    crawler.crawl() 
+    crawler.crawl(basic_filename=args.basic_output, detail_filename=args.detail_output) 
