@@ -48,6 +48,7 @@ def run_script(script_info):
     """스크립트를 실행하고 결과를 확인합니다."""
     script_name = script_info['name']
     script_path = script_info['script']
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     
     logger.info(f"=== {script_name} 실행 시작 ===")
     
@@ -74,6 +75,23 @@ def run_script(script_info):
             text=True
         )
         
+        # 로그 파일에 기록
+        run_log_path = DATA_DIR / 'run.log'
+        error_log_path = DATA_DIR / 'error.log'
+        sep = '\n' + ('='*40) + f"\n[{now_str}] {script_name} 실행 결과\n" + ('-'*40) + '\n'
+        # 표준 출력 기록
+        if result.stdout:
+            with open(run_log_path, 'a', encoding='utf-8') as f:
+                f.write(sep)
+                f.write(result.stdout)
+                f.write('\n')
+        # 표준 에러 기록
+        if result.stderr:
+            with open(error_log_path, 'a', encoding='utf-8') as f:
+                f.write(sep)
+                f.write(result.stderr)
+                f.write('\n')
+        
         # 출력 로깅
         if result.stdout:
             logger.info(f"{script_name} 출력:\n{result.stdout}")
@@ -94,13 +112,30 @@ def run_script(script_info):
         
     except subprocess.CalledProcessError as e:
         logger.error(f"{script_name} 실행 실패 (종료 코드: {e.returncode})")
+        run_log_path = DATA_DIR / 'run.log'
+        error_log_path = DATA_DIR / 'error.log'
+        sep = '\n' + ('='*40) + f"\n[{now_str}] {script_name} 실행 실패\n" + ('-'*40) + '\n'
         if e.stdout:
+            with open(run_log_path, 'a', encoding='utf-8') as f:
+                f.write(sep)
+                f.write(e.stdout)
+                f.write('\n')
             logger.error(f"표준 출력:\n{e.stdout}")
         if e.stderr:
+            with open(error_log_path, 'a', encoding='utf-8') as f:
+                f.write(sep)
+                f.write(e.stderr)
+                f.write('\n')
             logger.error(f"표준 에러:\n{e.stderr}")
         return False
     except Exception as e:
         logger.error(f"{script_name} 실행 중 예외 발생: {str(e)}")
+        error_log_path = DATA_DIR / 'error.log'
+        sep = '\n' + ('='*40) + f"\n[{now_str}] {script_name} 예외 발생\n" + ('-'*40) + '\n'
+        with open(error_log_path, 'a', encoding='utf-8') as f:
+            f.write(sep)
+            f.write(str(e))
+            f.write('\n')
         return False
 
 def main():

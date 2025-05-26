@@ -1,10 +1,42 @@
+# 프로젝트 실행 가이드 (Docker 기반)
+
+## 1. Docker로 전체 프로젝트 실행하기
+
+### 1) 도커 이미지 빌드
+
+```bash
+docker build -t jmyinfo-crawling-bot .
+```
+
+- 현재 디렉토리(`Dockerfile`이 위치한 곳)에서 위 명령어를 실행하세요.
+- `jmyinfo-crawling-bot`은 원하는 이미지 이름으로 변경할 수 있습니다.
+
+### 2) 도커 컨테이너 실행
+
+```bash
+docker run --rm -it -v $(pwd)/crawled_data:/app/crawled_data jmyinfo-crawling-bot
+```
+
+- 컨테이너가 실행되며, `/app/crawled_data` 폴더가 호스트의 `crawled_data`와 연결됩니다.
+- 크롤링 결과 등 데이터가 컨테이너 종료 후에도 호스트에 남습니다.
+- 필요에 따라 `-it` 옵션은 생략할 수 있습니다.
+
+### 3) 주요 참고사항
+
+- ARM64(M1/M2 등) 환경에서 정상 동작하도록 Dockerfile이 작성되어 있습니다.
+- 컨테이너 내에서 `main.py`가 자동 실행됩니다.
+- 크롤링 결과는 `/app/crawled_data`(호스트의 `crawled_data`)에 저장됩니다.
+- 추가 파이썬 스크립트 실행이 필요하다면, 컨테이너 내에서 직접 명령어를 실행하거나 Dockerfile/CMD를 수정하세요.
+
+---
+
 # 크롤링/데이터 처리 스크립트 정리
 
 ## 1. rndjob_job_crawler.py
 
-- **크롤링 대상 사이트**  
+- **크롤링 대상 사이트**
   - [R&D Job (연구개발특구진흥재단)](https://www.rndjob.or.kr/info/sp_rsch.asp)
-- **수집 데이터**  
+- **수집 데이터**
   - 연구개발 관련 채용공고의 기본 정보(기업명, 공고명, 등록일/마감일 등) 및 상세 정보(회사 정보, 모집 분야, 근무환경, 자격요건, 우대사항 등)
 - **주요 기능**
   - 게시판의 모든 페이지를 순회하며 채용공고 목록을 수집
@@ -17,9 +49,9 @@
 
 ## 2. research_company_crawler.py
 
-- **크롤링 대상 사이트**  
+- **크롤링 대상 사이트**
   - [R&D Job 연구개발특구 기업정보](https://www.rndjob.or.kr/info/sp_rsch_comp.asp)
-- **수집 데이터**  
+- **수집 데이터**
   - 연구개발특구 내 기업의 기본 정보(기업명, 업종, 주소 등) 및 상세 정보(기업 개요, 주요 사업, 인력 현황 등)
 - **주요 기능**
   - 전체 기업 목록 페이지를 순회하며 기업 리스트 수집
@@ -31,9 +63,9 @@
 
 ## 3. military_job_crawler.py
 
-- **크롤링 대상 사이트**  
+- **크롤링 대상 사이트**
   - [병무청 전문연구요원 채용공고](https://work.mma.go.kr/caisBYIS/search/cygonggogeomsaek.do)
-- **수집 데이터**  
+- **수집 데이터**
   - 전문연구요원 채용공고의 기본 정보(업체명, 채용제목, 작성일, 마감일 등) 및 상세 정보(병역지정업체 정보, 근무조건, 우대사항, 비고 등)
 - **주요 기능**
   - Selenium을 활용한 동적 페이지 크롤링 및 페이지네이션 처리
@@ -45,7 +77,7 @@
 
 ## 4. process_job_data.py
 
-- **기능 목적**  
+- **기능 목적**
   - 위 세 개의 크롤러가 수집한 CSV 데이터를 통합 및 전처리하여 최종 분석/활용 가능한 형태로 가공
 - **주요 기능**
   - 각 크롤러의 기본/상세 CSV 파일을 읽어 병합
@@ -67,25 +99,7 @@ selenium
 webdriver-manager
 ```
 
-> **참고:**  
-> - `selenium` 및 `webdriver-manager`는 military_job_crawler.py에서만 필요합니다.  
+> **참고:**
+>
+> - `selenium` 및 `webdriver-manager`는 military_job_crawler.py에서만 필요합니다.
 > - `logging`, `os`, `time`, `datetime`, `re` 등은 파이썬 표준 라이브러리이므로 별도 설치가 필요 없습니다.
-
----
-
-# 예시 디렉토리 구조
-
-```
-.
-├── rndjob_job_crawler.py
-├── research_company_crawler.py
-├── military_job_crawler.py
-├── process_job_data.py
-├── requirements.txt
-└── crawling_results/
-    ├── rndjob_basic_*.csv
-    ├── rndjob_detail_*.csv
-    ├── research_companies_*.csv
-    ├── military_jobs_basic_*.csv
-    └── military_jobs_detail_*.csv
-```
