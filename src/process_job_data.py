@@ -11,13 +11,38 @@ def check_required_columns(df, required_columns, df_name="DataFrame"):
     if missing:
         raise KeyError(f"{df_name}에 다음 컬럼이 없습니다: {missing}")
 
+# 파일 유효성 검사 함수 추가
+def validate_csv_file(file_path, file_type=""):
+    """CSV 파일이 유효한지 검사"""
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"{file_type} 파일을 찾을 수 없습니다: {file_path}")
+    
+    try:
+        # 파일이 비어있는지 확인
+        if os.path.getsize(file_path) == 0:
+            raise ValueError(f"{file_type} 파일이 비어있습니다: {file_path}")
+        
+        # CSV 읽기 시도
+        test_df = pd.read_csv(file_path, nrows=1)
+        if test_df.empty or len(test_df.columns) == 0:
+            raise ValueError(f"{file_type} 파일에 유효한 데이터가 없습니다: {file_path}")
+            
+        return True
+    except pd.errors.EmptyDataError:
+        raise ValueError(f"{file_type} 파일을 읽을 수 없습니다: {file_path}")
+
 # 안전한 literal_eval
 def safe_literal_eval(val):
     if isinstance(val, list):
         return val
-    if not isinstance(val, str) or not val.strip():
+    if pd.isna(val) or not isinstance(val, str) or not val.strip():
         return []
     try:
+        # 문자열 정리
+        val = val.strip()
+        if not val:
+            return []
+            
         result = ast.literal_eval(val)
         if isinstance(result, list):
             return result
@@ -25,116 +50,203 @@ def safe_literal_eval(val):
             return [result]
         else:
             return []
-    except Exception:
+    except (ValueError, SyntaxError, TypeError) as e:
+        print(f"[WARNING] literal_eval 실패: {val[:50]}... - {e}")
         return []
 
 def process_military_jobs(basic_file, detail_file):
     try:
+        # 파일 유효성 검사
+        validate_csv_file(basic_file, "군무원 기본")
+        validate_csv_file(detail_file, "군무원 상세")
+        
+        print(f"[INFO] 군무원 파일 읽기 시작...")
         basic_df = pd.read_csv(basic_file)
         detail_df = pd.read_csv(detail_file)
+        
+        print(f"[INFO] 군무원 기본 데이터: {len(basic_df)} rows, 상세 데이터: {len(detail_df)} rows")
+        
+        # 데이터가 비어있는지 확인
+        if basic_df.empty:
+            print("[WARNING] 군무원 기본 데이터가 비어있습니다.")
+            return pd.DataFrame()
+        if detail_df.empty:
+            print("[WARNING] 군무원 상세 데이터가 비어있습니다.")
+            return pd.DataFrame()
+        
         # 필수 컬럼 체크
-        basic_required = ['상세정보_URL', '업체명', '채용제목', '작성일', '마감일', '요원형태', '최종학력', '자격요원', '주소', '담당업무', '비고']
-        detail_required = ['상세정보_URL']
+        basic_required = ['상세정보_URL', '업체명', '채용제목', '작성일', '마감일']
+        detail_required = ['상세정보_URL', '요원형태', '최종학력', '자격요원', '주소', '담당업무', '비고']
+        
         check_required_columns(basic_df, basic_required, 'military basic_df')
         check_required_columns(detail_df, detail_required, 'military detail_df')
+        
+        # 병합 전 키 컬럼 확인
+        if '상세정보_URL' not in basic_df.columns or '상세정보_URL' not in detail_df.columns:
+            raise KeyError("병합 키 '상세정보_URL'이 없습니다.")
+        
         merged_df = pd.merge(basic_df, detail_df, on='상세정보_URL', how='inner')
+        
         if merged_df.empty:
-            print("[경고] 군무원 병합 결과가 비어 있습니다. 입력 파일을 확인하세요.")
-            raise ValueError("군무원 병합 결과가 비어 있음")
-        print(f"[INFO] 군무원 병합 결과: {len(merged_df)} rows")
+            print("[WARNING] 군무원 병합 결과가 비어 있습니다.")
+            return pd.DataFrame()
+            
+        print(f"[INFO] 군무원 병합 성공: {len(merged_df)} rows")
+        
         final_df = pd.DataFrame()
-        final_df['company_name'] = merged_df['업체명']
-        final_df['post_name'] = merged_df['채용제목']
-        final_df['registration_date'] = merged_df['작성일']
-        final_df['deadline'] = merged_df['마감일']
-        final_df['qualification_agent'] = merged_df['요원형태']
-        final_df['qualification_education'] = merged_df['최종학력']
-        final_df['qualification_career'] = merged_df['자격요원']
-        final_df['region'] = merged_df['주소']
-        final_df['Field'] = merged_df['담당업무']
-        final_df['keywords_list'] = merged_df['비고']
-        final_df['source_info'] = merged_df['상세정보_URL']
+        # 매핑 규칙에 따라 컬럼 할당
+        final_df['company_name'] = merged_df.get('업체명', '')
+        final_df['post_name'] = merged_df.get('채용제목', '')
+        final_df['registration_date'] = merged_df.get('작성일', '')
+        final_df['deadline'] = merged_df.get('마감일', '')
+        final_df['qualification_agent'] = merged_df.get('요원형태', '')
+        final_df['qualification_education'] = merged_df.get('최종학력', '')
+        final_df['qualification_career'] = merged_df.get('자격요원', '')
+        final_df['region'] = merged_df.get('주소', '')
+        final_df['Field'] = merged_df.get('담당업무', '')
+        final_df['keywords_list'] = merged_df.get('비고', '')
+        final_df['source_info'] = merged_df.get('상세정보_URL', '')
         final_df['source_type'] = 'military'
+        
         return final_df
+        
     except Exception as e:
         print(f"[ERROR] process_military_jobs 예외: {e}")
-        raise
+        import traceback
+        traceback.print_exc()
+        return pd.DataFrame()
 
 def process_rnd_jobs(basic_file, detail_file):
     try:
+        # 파일 유효성 검사
+        validate_csv_file(basic_file, "RND 기본")
+        validate_csv_file(detail_file, "RND 상세")
+        
+        print(f"[INFO] RND 파일 읽기 시작...")
         basic_df = pd.read_csv(basic_file)
         detail_df = pd.read_csv(detail_file)
+        
+        print(f"[INFO] RND 기본 데이터: {len(basic_df)} rows, 상세 데이터: {len(detail_df)} rows")
+        
+        # 데이터가 비어있는지 확인
+        if basic_df.empty:
+            print("[WARNING] RND 기본 데이터가 비어있습니다.")
+            return pd.DataFrame()
+        if detail_df.empty:
+            print("[WARNING] RND 상세 데이터가 비어있습니다.")
+            return pd.DataFrame()
+        
         # 필수 컬럼 체크
-        basic_required = ['상세정보_URL', '기업명', '공고명', '등록일', '마감일', '학력', '경력', '지역', '근무환경', '모집_분야_및_인원']
-        detail_required = ['상세정보_URL', '담당업무', '자격사항', '우대사항']
+        basic_required = ['상세정보_URL', '기업명', '공고명', '등록일', '마감일']
+        detail_required = ['상세정보_URL', '고용형태', '학력', '경력', '지역', '모집_분야_및_인원', '담당업무', '자격사항', '우대사항']
+        
         check_required_columns(basic_df, basic_required, 'rnd basic_df')
         check_required_columns(detail_df, detail_required, 'rnd detail_df')
+        
         merged_df = pd.merge(basic_df, detail_df, on='상세정보_URL', how='inner')
+        
         if merged_df.empty:
-            print("[경고] RND 병합 결과가 비어 있습니다. 입력 파일을 확인하세요.")
-            raise ValueError("RND 병합 결과가 비어 있음")
-        print(f"[INFO] RND 병합 결과: {len(merged_df)} rows")
+            print("[WARNING] RND 병합 결과가 비어 있습니다.")
+            return pd.DataFrame()
+            
+        print(f"[INFO] RND 병합 성공: {len(merged_df)} rows")
+        
         final_df = pd.DataFrame()
-        final_df['company_name'] = merged_df['기업명']
-        final_df['post_name'] = merged_df['공고명']
-        final_df['registration_date'] = merged_df['등록일']
-        final_df['deadline'] = merged_df['마감일']
-        final_df['qualification_education'] = merged_df['학력']
-        final_df['qualification_career'] = merged_df['경력']
-        final_df['region'] = merged_df['지역']
-        def extract_employment_type(x):
-            if not isinstance(x, str) or not x.strip():
-                return ''
-            try:
-                env_dict = ast.literal_eval(x)
-                if isinstance(env_dict, dict):
-                    return env_dict.get('고용형태', '')
-                else:
-                    return ''
-            except Exception:
-                return ''
-        final_df['qualification_agent'] = merged_df['근무환경'].apply(extract_employment_type)
-        final_df['Field'] = merged_df['모집_분야_및_인원']
+        final_df['company_name'] = merged_df.get('기업명', '')
+        final_df['post_name'] = merged_df.get('공고명', '')
+        final_df['registration_date'] = merged_df.get('등록일', '')
+        final_df['deadline'] = merged_df.get('마감일', '')
+        final_df['qualification_agent'] = merged_df.get('고용형태', '')
+        final_df['qualification_education'] = merged_df.get('학력', '')
+        final_df['qualification_career'] = merged_df.get('경력', '')
+        final_df['region'] = merged_df.get('지역', '')
+        final_df['Field'] = merged_df.get('모집_분야_및_인원', '')
+        # keywords_list: detail의 3개 컬럼 합치기
         def combine_keywords(row):
             keywords = []
             for col in ['담당업무', '자격사항', '우대사항']:
-                items = safe_literal_eval(row[col]) if col in row and pd.notnull(row[col]) else []
-                if items:
-                    keywords.extend(items)
+                if col in row and pd.notna(row[col]):
+                    items = safe_literal_eval(row[col])
+                    if items:
+                        keywords.extend(items)
             return keywords
         final_df['keywords_list'] = merged_df.apply(combine_keywords, axis=1)
-        final_df['source_info'] = merged_df['상세정보_URL']
+        final_df['source_info'] = merged_df.get('상세정보_URL', '')
         final_df['source_type'] = 'rndjob'
+        
         return final_df
+        
     except Exception as e:
         print(f"[ERROR] process_rnd_jobs 예외: {e}")
-        raise
+        import traceback
+        traceback.print_exc()
+        return pd.DataFrame()
 
 def update_job_data(new_df):
-    current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    new_df['update_date'] = current_time
-    new_df['status'] = 'new'
-    for col in ['company_name', 'post_name', 'source_info']:
-        if col not in new_df.columns:
-            raise KeyError(f"'{col}' 컬럼이 new_df에 없습니다.")
-    if os.path.exists('processed_job_data.csv'):
-        existing_df = pd.read_csv('processed_job_data.csv')
+    try:
+        if new_df.empty:
+            print("[WARNING] 업데이트할 새 데이터가 없습니다.")
+            return pd.DataFrame()
+            
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        new_df['update_date'] = current_time
+        new_df['status'] = 'new'
+        
+        # 필수 컬럼 확인
         for col in ['company_name', 'post_name', 'source_info']:
-            if col not in existing_df.columns:
-                raise KeyError(f"'{col}' 컬럼이 기존 데이터에 없습니다.")
-        new_df['job_id'] = new_df['company_name'].astype(str) + '_' + new_df['post_name'].astype(str) + '_' + new_df['source_info'].astype(str)
-        existing_df['job_id'] = existing_df['company_name'].astype(str) + '_' + existing_df['post_name'].astype(str) + '_' + existing_df['source_info'].astype(str)
-        new_entries = new_df[~new_df['job_id'].isin(existing_df['job_id'])]
-        updated_entries = new_df[new_df['job_id'].isin(existing_df['job_id'])]
-        updated_entries['status'] = 'updated'
-        unchanged_entries = existing_df[~existing_df['job_id'].isin(new_df['job_id'])]
-        unchanged_entries['status'] = 'unchanged'
-        final_df = pd.concat([new_entries, updated_entries, unchanged_entries], ignore_index=True)
-        final_df = final_df.drop('job_id', axis=1)
-        print(f"[INFO] 신규: {len(new_entries)}, 갱신: {len(updated_entries)}, 유지: {len(unchanged_entries)}")
-        return final_df
-    else:
-        print(f"[INFO] 기존 데이터 없음. 모두 신규로 처리: {len(new_df)} rows")
+            if col not in new_df.columns:
+                print(f"[WARNING] '{col}' 컬럼이 new_df에 없습니다. 빈 컬럼 추가.")
+                new_df[col] = ''
+        
+        if os.path.exists('processed_job_data.csv'):
+            try:
+                existing_df = pd.read_csv('processed_job_data.csv')
+                
+                if existing_df.empty:
+                    print("[INFO] 기존 데이터가 비어있음. 모든 데이터를 신규로 처리.")
+                    return new_df
+                
+                # 필수 컬럼 확인
+                for col in ['company_name', 'post_name', 'source_info']:
+                    if col not in existing_df.columns:
+                        print(f"[WARNING] '{col}' 컬럼이 기존 데이터에 없습니다. 빈 컬럼 추가.")
+                        existing_df[col] = ''
+                
+                # job_id 생성 (null 값 처리)
+                new_df['job_id'] = (
+                    new_df['company_name'].fillna('').astype(str) + '_' + 
+                    new_df['post_name'].fillna('').astype(str) + '_' + 
+                    new_df['source_info'].fillna('').astype(str)
+                )
+                existing_df['job_id'] = (
+                    existing_df['company_name'].fillna('').astype(str) + '_' + 
+                    existing_df['post_name'].fillna('').astype(str) + '_' + 
+                    existing_df['source_info'].fillna('').astype(str)
+                )
+                
+                new_entries = new_df[~new_df['job_id'].isin(existing_df['job_id'])]
+                updated_entries = new_df[new_df['job_id'].isin(existing_df['job_id'])]
+                updated_entries['status'] = 'updated'
+                unchanged_entries = existing_df[~existing_df['job_id'].isin(new_df['job_id'])]
+                unchanged_entries['status'] = 'unchanged'
+                
+                final_df = pd.concat([new_entries, updated_entries, unchanged_entries], ignore_index=True)
+                final_df = final_df.drop('job_id', axis=1)
+                
+                print(f"[INFO] 신규: {len(new_entries)}, 갱신: {len(updated_entries)}, 유지: {len(unchanged_entries)}")
+                return final_df
+                
+            except Exception as e:
+                print(f"[ERROR] 기존 데이터 읽기 실패: {e}")
+                return new_df
+        else:
+            print(f"[INFO] 기존 데이터 없음. 모두 신규로 처리: {len(new_df)} rows")
+            return new_df
+            
+    except Exception as e:
+        print(f"[ERROR] update_job_data 예외: {e}")
+        import traceback
+        traceback.print_exc()
         return new_df
 
 def main():
@@ -144,39 +256,68 @@ def main():
     parser.add_argument('--rnd-basic', required=True, help='Path to RND jobs basic CSV file')
     parser.add_argument('--rnd-detail', required=True, help='Path to RND jobs detail CSV file')
     parser.add_argument('--output', required=True, help='Path to output processed CSV file')
+    
     args = parser.parse_args()
+    
+    all_dataframes = []
+    
+    # 군무원 데이터 처리
     try:
         military_df = process_military_jobs(args.military_basic, args.military_detail)
+        if not military_df.empty:
+            all_dataframes.append(military_df)
+            print(f"[INFO] 군무원 데이터 처리 완료: {len(military_df)} rows")
     except Exception as e:
         print(f"[ERROR] 군무원 데이터 처리 실패: {e}")
-        military_df = pd.DataFrame()
+    
+    # RND 데이터 처리
     try:
         rnd_df = process_rnd_jobs(args.rnd_basic, args.rnd_detail)
+        if not rnd_df.empty:
+            all_dataframes.append(rnd_df)
+            print(f"[INFO] RND 데이터 처리 완료: {len(rnd_df)} rows")
     except Exception as e:
         print(f"[ERROR] RND 데이터 처리 실패: {e}")
-        rnd_df = pd.DataFrame()
-    combined_df = pd.concat([military_df, rnd_df], ignore_index=True)
+    
+    # 데이터가 하나도 없는 경우
+    if not all_dataframes:
+        print("[ERROR] 처리할 데이터가 없습니다.")
+        return
+    
+    # 데이터 결합
+    combined_df = pd.concat(all_dataframes, ignore_index=True)
     print(f"[INFO] 전체 데이터 합계: {len(combined_df)} rows")
+    
+    # 날짜 형식 변환
     for date_col in ['registration_date', 'deadline']:
         if date_col in combined_df.columns:
             combined_df[date_col] = pd.to_datetime(combined_df[date_col], errors='coerce')
+    
+    # 업데이트 처리
     try:
         final_df = update_job_data(combined_df)
     except Exception as e:
         print(f"[ERROR] update_job_data 처리 실패: {e}")
         final_df = combined_df
+    
+    # 파일 저장
     try:
-        final_df.to_csv(args.output, index=False, encoding='utf-8-sig')
-        print(f"[INFO] 데이터 저장 완료: '{args.output}'")
+        if not final_df.empty:
+            final_df.to_csv(args.output, index=False, encoding='utf-8-sig')
+            print(f"[INFO] 데이터 저장 완료: '{args.output}'")
+            
+            # 상태 통계 출력
+            if 'status' in final_df.columns:
+                status_counts = final_df['status'].value_counts()
+                print("\n[INFO] Update Statistics:")
+                for status, count in status_counts.items():
+                    print(f"  {status}: {count} entries")
+        else:
+            print("[ERROR] 저장할 데이터가 없습니다.")
     except Exception as e:
         print(f"[ERROR] 파일 저장 실패: {e}")
-    if 'status' in final_df.columns:
-        status_counts = final_df['status'].value_counts()
-        print("\n[INFO] Update Statistics:")
-        for status, count in status_counts.items():
-            print(f"{status}: {count} entries")
-    else:
-        print("[INFO] status 컬럼 없음. 통계 출력 생략.")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
-    main() 
+    main()
