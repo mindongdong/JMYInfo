@@ -26,6 +26,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libnspr4 \
     libnss3 \
     fonts-nanum \
+    gcc \
+    build-essential \
+    python3-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -59,10 +62,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # 애플리케이션 코드 복사
 COPY src/ ./src/
-COPY main.py .
+COPY Snakefile .
 
 # 데이터 디렉토리 생성
 RUN mkdir -p /app/crawled_data
 
-# 실행 명령
-CMD ["python", "main.py"] 
+# Snakemake로 전체 workflow 실행 (병렬성 1, 로그 출력)
+CMD ["snakemake", "--snakefile", "/app/Snakefile", "crawled_data/processed_job_data.csv", "--cores", "1", "--printshellcmds", "--keep-going", "--forceall"] 
