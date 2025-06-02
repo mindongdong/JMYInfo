@@ -85,6 +85,11 @@ def process_military_jobs(basic_file, detail_file):
         if '상세정보_URL' not in basic_df.columns or '상세정보_URL' not in detail_df.columns:
             raise KeyError("병합 키 '상세정보_URL'이 없습니다.")
         
+        # 중복 컬럼 제거 (상세정보_URL 제외)
+        overlap_cols = [col for col in detail_df.columns if col in basic_df.columns and col != '상세정보_URL']
+        if overlap_cols:
+            detail_df = detail_df.drop(columns=overlap_cols)
+        
         merged_df = pd.merge(basic_df, detail_df, on='상세정보_URL', how='inner')
         
         if merged_df.empty:
@@ -142,6 +147,15 @@ def process_rnd_jobs(basic_file, detail_file):
         
         check_required_columns(basic_df, basic_required, 'rnd basic_df')
         check_required_columns(detail_df, detail_required, 'rnd detail_df')
+        
+        # 병합 전 키 컬럼 확인
+        if '상세정보_URL' not in basic_df.columns or '상세정보_URL' not in detail_df.columns:
+            raise KeyError("병합 키 '상세정보_URL'이 없습니다.")
+        
+        # 중복 컬럼 제거 (상세정보_URL 제외)
+        overlap_cols = [col for col in detail_df.columns if col in basic_df.columns and col != '상세정보_URL']
+        if overlap_cols:
+            detail_df = detail_df.drop(columns=overlap_cols)
         
         merged_df = pd.merge(basic_df, detail_df, on='상세정보_URL', how='inner')
         

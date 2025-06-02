@@ -204,7 +204,7 @@ class ResearchCompanyCrawler:
             return
 
         # 결과 저장할 디렉토리 생성
-        output_dir = 'crawling_results'
+        output_dir = 'crawled_data'
         os.makedirs(output_dir, exist_ok=True)
 
         # 현재 시간을 파일명에 포함
