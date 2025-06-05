@@ -206,10 +206,8 @@ class ResearchCompanyCrawler:
         # 결과 저장할 디렉토리 생성
         output_dir = 'crawled_data'
         os.makedirs(output_dir, exist_ok=True)
-
-        # 현재 시간을 파일명에 포함
-        current_time = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f"{output_dir}/research_companies_{current_time}.csv"
+        
+        filename = f"{output_dir}/research_companies.csv"
 
         # DataFrame 생성 및 저장
         df = pd.DataFrame(self.company_data)

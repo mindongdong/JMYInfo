@@ -98,12 +98,19 @@ def process_military_jobs(basic_file, detail_file):
             
         print(f"[INFO] 군무원 병합 성공: {len(merged_df)} rows")
         
+        # 병합 후 컬럼명 확인
+        print("[DEBUG] 병합 후 merged_df 컬럼:", merged_df.columns.tolist())
+        
+        # 병합 후 값 확인
+        print("[DEBUG] merged_df['등록일'] 샘플:", merged_df['등록일'].head(10).tolist())
+        print("[DEBUG] merged_df['마감일'] 샘플:", merged_df['마감일'].head(10).tolist())
+        
         final_df = pd.DataFrame()
         # 매핑 규칙에 따라 컬럼 할당
         final_df['company_name'] = merged_df.get('업체명', '')
         final_df['post_name'] = merged_df.get('채용제목', '')
-        final_df['registration_date'] = merged_df.get('작성일', '')
-        final_df['deadline'] = merged_df.get('마감일', '')
+        final_df['registration_date'] = merged_df['작성일'] if '작성일' in merged_df.columns else ''
+        final_df['deadline'] = merged_df['마감일'] if '마감일' in merged_df.columns else ''
         final_df['qualification_agent'] = merged_df.get('요원형태', '')
         final_df['qualification_education'] = merged_df.get('최종학력', '')
         final_df['qualification_career'] = merged_df.get('자격요원', '')
@@ -112,6 +119,9 @@ def process_military_jobs(basic_file, detail_file):
         final_df['keywords_list'] = merged_df.get('비고', '')
         final_df['source_info'] = merged_df.get('상세정보_URL', '')
         final_df['source_type'] = 'military'
+        
+        print("[DEBUG] registration_date 변환 전:", final_df['registration_date'].head(10).tolist())
+        print("[DEBUG] registration_date 변환 후:", pd.to_datetime(final_df['registration_date'], errors='coerce').head(10).tolist())
         
         return final_df
         
@@ -143,7 +153,7 @@ def process_rnd_jobs(basic_file, detail_file):
         
         # 필수 컬럼 체크
         basic_required = ['상세정보_URL', '기업명', '공고명', '등록일', '마감일']
-        detail_required = ['상세정보_URL', '고용형태', '학력', '경력', '지역', '모집_분야_및_인원', '담당업무', '자격사항', '우대사항']
+        detail_required = ['상세정보_URL', '고용형태', '학력', '경력', '주소', '모집_분야_및_인원', '담당업무', '자격사항', '우대사항']
         
         check_required_columns(basic_df, basic_required, 'rnd basic_df')
         check_required_columns(detail_df, detail_required, 'rnd detail_df')
@@ -165,15 +175,22 @@ def process_rnd_jobs(basic_file, detail_file):
             
         print(f"[INFO] RND 병합 성공: {len(merged_df)} rows")
         
+        # 병합 후 컬럼명 확인
+        print("[DEBUG] 병합 후 merged_df 컬럼:", merged_df.columns.tolist())
+        
+        # 병합 후 값 확인
+        print("[DEBUG] merged_df['등록일'] 샘플:", merged_df['등록일'].head(10).tolist())
+        print("[DEBUG] merged_df['마감일'] 샘플:", merged_df['마감일'].head(10).tolist())
+        
         final_df = pd.DataFrame()
         final_df['company_name'] = merged_df.get('기업명', '')
         final_df['post_name'] = merged_df.get('공고명', '')
-        final_df['registration_date'] = merged_df.get('등록일', '')
-        final_df['deadline'] = merged_df.get('마감일', '')
+        final_df['registration_date'] = merged_df['등록일'] if '등록일' in merged_df.columns else ''
+        final_df['deadline'] = merged_df['마감일'] if '마감일' in merged_df.columns else ''
         final_df['qualification_agent'] = merged_df.get('고용형태', '')
         final_df['qualification_education'] = merged_df.get('학력', '')
         final_df['qualification_career'] = merged_df.get('경력', '')
-        final_df['region'] = merged_df.get('지역', '')
+        final_df['region'] = merged_df.get('주소', '')
         final_df['Field'] = merged_df.get('모집_분야_및_인원', '')
         # keywords_list: detail의 3개 컬럼 합치기
         def combine_keywords(row):
@@ -187,6 +204,9 @@ def process_rnd_jobs(basic_file, detail_file):
         final_df['keywords_list'] = merged_df.apply(combine_keywords, axis=1)
         final_df['source_info'] = merged_df.get('상세정보_URL', '')
         final_df['source_type'] = 'rndjob'
+        
+        print("[DEBUG] registration_date 변환 전:", final_df['registration_date'].head(10).tolist())
+        print("[DEBUG] registration_date 변환 후:", pd.to_datetime(final_df['registration_date'], errors='coerce').head(10).tolist())
         
         return final_df
         
@@ -248,6 +268,8 @@ def update_job_data(new_df):
                 final_df = final_df.drop('job_id', axis=1)
                 
                 print(f"[INFO] 신규: {len(new_entries)}, 갱신: {len(updated_entries)}, 유지: {len(unchanged_entries)}")
+                print("[DEBUG] update_job_data 입력 registration_date 샘플:", new_df['registration_date'].head(10).tolist())
+                print("[DEBUG] update_job_data 반환 registration_date 샘플:", final_df['registration_date'].head(10).tolist())
                 return final_df
                 
             except Exception as e:

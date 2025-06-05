@@ -183,7 +183,7 @@ class RndJobCrawler:
 
         return job_info
 
-    def crawl(self, basic_filename=None, detail_filename=None):
+    def crawl(self, basic_filename=None, detail_filename=None, research_companies_path=None):
         """크롤링을 실행합니다."""
         logging.info("크롤링 시작...")
         soup = self.get_page_content(self.base_url)
@@ -226,9 +226,9 @@ class RndJobCrawler:
             time.sleep(2)  # 페이지 간 딜레이
 
         if basic_filename and detail_filename:
-            self.save_to_csv(headers, basic_filename, detail_filename)
+            self.save_to_csv(headers, basic_filename, detail_filename, research_companies_path)
 
-    def save_to_csv(self, headers, basic_filename, detail_filename):
+    def save_to_csv(self, headers, basic_filename, detail_filename, research_companies_path=None):
         """수집된 데이터를 CSV 파일로 저장합니다."""
         if not self.basic_data or not self.detail_data:
             logging.warning("저장할 데이터가 없습니다.")
@@ -260,6 +260,21 @@ class RndJobCrawler:
 
             # 상세 정보 저장
             df_detail = pd.DataFrame(self.detail_data)
+
+            # research_companies.csv와 회사명 기준으로 주소 매칭
+            if research_companies_path is not None and os.path.exists(research_companies_path):
+                df_companies = pd.read_csv(research_companies_path)
+                if '회사명' in df_companies.columns and '상세_주소' in df_companies.columns:
+                    df_detail = pd.merge(
+                        df_detail,
+                        df_companies[['회사명', '상세_주소']],
+                        on='회사명',
+                        how='left',
+                        suffixes=('', '_research')
+                    )
+                    # '상세_주소'를 '주소' 컬럼으로 이름 변경
+                    df_detail.rename(columns={'상세_주소': '주소'}, inplace=True)
+
             df_detail.to_csv(detail_filename, index=False, encoding='utf-8-sig')
             logging.info(f"상세 정보가 {detail_filename}에 저장되었습니다.")
 
@@ -270,8 +285,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='R&D Job Crawler')
     parser.add_argument('--basic-output', required=True, help='Output filename for basic job information')
     parser.add_argument('--detail-output', required=True, help='Output filename for detailed job information')
+    parser.add_argument('--research-companies', required=False, help='Path to research_companies.csv')
     
     args = parser.parse_args()
     
     crawler = RndJobCrawler()
-    crawler.crawl(basic_filename=args.basic_output, detail_filename=args.detail_output) 
+    crawler.crawl(
+        basic_filename=args.basic_output,
+        detail_filename=args.detail_output,
+        research_companies_path=args.research_companies
+    ) 
