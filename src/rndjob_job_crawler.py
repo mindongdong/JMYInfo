@@ -6,6 +6,13 @@ from datetime import datetime
 import os
 import logging
 import argparse
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
 class RndJobCrawler:
     def __init__(self):
@@ -15,9 +22,138 @@ class RndJobCrawler:
         }
         self.basic_data = []  # 게시판 기본 정보
         self.detail_data = []  # 상세 페이지 정보
+        self.driver = None
         
         # 로깅 설정
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+    def init_driver(self):
+        """Selenium WebDriver 초기화"""
+        try:
+            chrome_options = Options()
+            chrome_options.add_argument('--headless')  # 브라우저 창 숨기기
+            chrome_options.add_argument('--no-sandbox')
+            chrome_options.add_argument('--disable-dev-shm-usage')
+            chrome_options.add_argument('--disable-gpu')
+            chrome_options.add_argument('--window-size=1920,1080')
+            chrome_options.add_argument(f'--user-agent={self.headers["User-Agent"]}')
+            chrome_options.page_load_strategy = 'eager'
+            
+            # Chrome 바이너리 위치 지정 (macOS)
+            import os
+            if os.path.exists('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'):
+                chrome_options.binary_location = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+            elif os.path.exists('/usr/bin/chromium'):
+                chrome_options.binary_location = '/usr/bin/chromium'
+            
+            # 성능 최적화를 위한 설정
+            prefs = {
+                'profile.default_content_setting_values': {
+                    'images': 2,  # 이미지 로딩 비활성화
+                    'plugins': 2,  # 플러그인 비활성화
+                    'javascript': 1  # JavaScript는 필요하므로 활성화
+                }
+            }
+            chrome_options.add_experimental_option('prefs', prefs)
+            
+            # ChromeDriver 경로 설정
+            service = None
+            chromedriver_paths = [
+                '/opt/homebrew/bin/chromedriver',  # macOS Homebrew
+                '/usr/local/bin/chromedriver',     # 일반적인 설치 위치
+                '/usr/bin/chromedriver'            # Linux 기본 위치
+            ]
+            
+            for path in chromedriver_paths:
+                if os.path.exists(path):
+                    service = Service(path)
+                    logging.info(f"ChromeDriver 발견: {path}")
+                    break
+            
+            if service:
+                self.driver = webdriver.Chrome(service=service, options=chrome_options)
+            else:
+                # PATH에서 자동으로 찾기 시도
+                logging.info("ChromeDriver 경로를 자동으로 찾는 중...")
+                self.driver = webdriver.Chrome(options=chrome_options)
+            
+            self.driver.implicitly_wait(10)
+            logging.info("WebDriver 초기화 완료")
+            return True
+        except Exception as e:
+            logging.error(f"WebDriver 초기화 실패: {e}")
+            logging.info("WebDriver 없이 크롤링을 계속합니다. (회사 상세정보 제외)")
+            return False
+
+    def close_driver(self):
+        """WebDriver 종료"""
+        if self.driver:
+            self.driver.quit()
+            logging.info("WebDriver 종료 완료")
+
+    def get_company_detail_info_with_selenium(self, detail_url):
+        """selenium을 사용하여 회사 상세정보 크롤링"""
+        company_detail_info = {}
+        
+        try:
+            self.driver.get(detail_url)
+            
+            # info_btn 클래스 찾기
+            info_btn = WebDriverWait(self.driver, 10).until(
+                EC.element_to_be_clickable((By.CLASS_NAME, "info_btn"))
+            )
+            
+            # 버튼 클릭
+            info_btn.click()
+            
+            # 팝업 창이 열릴 때까지 기다리기
+            WebDriverWait(self.driver, 10).until(
+                lambda driver: len(driver.window_handles) > 1
+            )
+            
+            # 새로운 창으로 전환
+            original_window = self.driver.current_window_handle
+            for window_handle in self.driver.window_handles:
+                if window_handle != original_window:
+                    self.driver.switch_to.window(window_handle)
+                    break
+            
+            # 페이지 로딩 대기
+            time.sleep(2)
+            
+            # 회사 상세정보 크롤링 (research_company_crawler.py와 동일한 방식)
+            soup = BeautifulSoup(self.driver.page_source, 'html.parser')
+            info_dls = soup.find_all('dl', class_='info_dl')
+            
+            for dl in info_dls:
+                dts = dl.find_all('dt')
+                dds = dl.find_all('dd')
+                for dt, dd in zip(dts, dds):
+                    key = f"회사_상세_{dt.text.strip()}"
+                    value = dd.text.strip()
+                    company_detail_info[key] = value
+            
+            # 원래 창으로 돌아가기
+            self.driver.close()  # 팝업 창 닫기
+            self.driver.switch_to.window(original_window)
+            
+            logging.info(f"회사 상세정보 크롤링 완료: {len(company_detail_info)}개 필드")
+            
+        except TimeoutException:
+            logging.warning(f"회사 상세정보 버튼을 찾을 수 없습니다: {detail_url}")
+        except NoSuchElementException:
+            logging.warning(f"회사 상세정보 요소를 찾을 수 없습니다: {detail_url}")
+        except Exception as e:
+            logging.error(f"회사 상세정보 크롤링 중 오류 발생: {e}")
+            # 오류 발생 시 원래 창으로 돌아가기 시도
+            try:
+                if len(self.driver.window_handles) > 1:
+                    self.driver.close()
+                    self.driver.switch_to.window(self.driver.window_handles[0])
+            except:
+                pass
+        
+        return company_detail_info
 
     def get_page_content(self, url):
         try:
@@ -56,12 +192,29 @@ class RndJobCrawler:
         rows = []
         board_table = soup.find('table', class_='board_list')
         if board_table:
+            # 헤더에서 기업명 컬럼의 인덱스 찾기
+            headers = self.get_board_headers(soup)
+            company_col_index = -1
+            for i, header in enumerate(headers):
+                if '기업명' in header or '회사명' in header or '업체명' in header:
+                    company_col_index = i
+                    break
+            
             for tr in board_table.find('tbody').find_all('tr'):
                 row_data = []
                 # 일반 td 셀들의 텍스트 수집
-                for td in tr.find_all('td'):
+                tds = tr.find_all('td')
+                for idx, td in enumerate(tds):
+                    # 기업명 컬럼인 경우 class="comp_name"인 p 태그의 텍스트 우선 추출
+                    if idx == company_col_index:
+                        comp_name_p = td.find('p', class_='comp_name')
+                        if comp_name_p:
+                            row_data.append(comp_name_p.text.strip())
+                        else:
+                            # comp_name 클래스가 없으면 기존 로직 사용
+                            row_data.append(td.text.strip())
                     # class="num"인 td의 경우 div 태그 내부의 텍스트도 수집
-                    if td.get('class') and 'num' in td.get('class'):
+                    elif td.get('class') and 'num' in td.get('class'):
                         div_tag = td.find('div')
                         if div_tag:
                             # div 내부의 모든 텍스트를 수집
@@ -102,7 +255,7 @@ class RndJobCrawler:
                 rows.append(row_data)
         return rows
 
-    def parse_job_detail(self, soup):
+    def parse_job_detail(self, soup, detail_url=None):
         """상세 페이지의 정보를 파싱합니다."""
         job_info = {}
         
@@ -135,6 +288,11 @@ class RndJobCrawler:
                         dd = dt.find_next_sibling('dd')
                         value = dd.text.strip() if dd else ""
                         job_info[key] = value
+        
+        # Selenium을 사용하여 회사 상세정보 크롤링 (info_btn 클릭)
+        if detail_url and self.driver:
+            company_detail_info = self.get_company_detail_info_with_selenium(detail_url)
+            job_info.update(company_detail_info)
         
         # 채용공고 기본 정보
         info_lists = soup.find_all('dl', class_='info_list')
@@ -186,47 +344,57 @@ class RndJobCrawler:
     def crawl(self, basic_filename=None, detail_filename=None, research_companies_path=None):
         """크롤링을 실행합니다."""
         logging.info("크롤링 시작...")
-        soup = self.get_page_content(self.base_url)
-        if not soup:
-            return
+        
+        # WebDriver 초기화
+        if not self.init_driver():
+            logging.error("WebDriver 초기화에 실패했습니다. 회사 상세정보 크롤링을 건너뜁니다.")
+        
+        try:
+            soup = self.get_page_content(self.base_url)
+            if not soup:
+                return
 
-        # 컬럼명 가져오기
-        headers = self.get_board_headers(soup)
-        if not headers:
-            logging.error("게시판 헤더를 찾을 수 없습니다.")
-            return
+            # 컬럼명 가져오기
+            headers = self.get_board_headers(soup)
+            if not headers:
+                logging.error("게시판 헤더를 찾을 수 없습니다.")
+                return
 
-        pages = self.get_pagination_info(soup)
-        total_pages = len(pages)
-        logging.info(f"총 {total_pages}개의 페이지를 크롤링합니다.")
+            pages = self.get_pagination_info(soup)
+            total_pages = len(pages)
+            logging.info(f"총 {total_pages}개의 페이지를 크롤링합니다.")
 
-        for page_num in pages:
-            logging.info(f"페이지 {page_num} 크롤링 중...")
-            page_url = f"{self.base_url}?page={page_num}"
-            page_soup = self.get_page_content(page_url)
-            
-            if not page_soup:
-                continue
+            for page_num in pages:
+                logging.info(f"페이지 {page_num} 크롤링 중...")
+                page_url = f"{self.base_url}?page={page_num}"
+                page_soup = self.get_page_content(page_url)
+                
+                if not page_soup:
+                    continue
 
-            # 기본 정보 수집
-            rows = self.get_board_rows(page_soup)
-            self.basic_data.extend(rows)
-            
-            # 상세 정보 수집
-            for row in rows:
-                detail_url = row[-1]  # URL은 마지막 컬럼
-                if detail_url:
-                    detail_soup = self.get_page_content(detail_url)
-                    if detail_soup:
-                        detail_info = self.parse_job_detail(detail_soup)
-                        detail_info['상세정보_URL'] = detail_url  # URL을 키로 사용하여 나중에 매칭
-                        self.detail_data.append(detail_info)
-                        time.sleep(1)  # 서버 부하 방지
+                # 기본 정보 수집
+                rows = self.get_board_rows(page_soup)
+                self.basic_data.extend(rows)
+                
+                # 상세 정보 수집
+                for row in rows:
+                    detail_url = row[-1]  # URL은 마지막 컬럼
+                    if detail_url:
+                        detail_soup = self.get_page_content(detail_url)
+                        if detail_soup:
+                            detail_info = self.parse_job_detail(detail_soup, detail_url)
+                            detail_info['상세정보_URL'] = detail_url  # URL을 키로 사용하여 나중에 매칭
+                            self.detail_data.append(detail_info)
+                            time.sleep(1)  # 서버 부하 방지
 
-            time.sleep(2)  # 페이지 간 딜레이
+                time.sleep(2)  # 페이지 간 딜레이
 
-        if basic_filename and detail_filename:
-            self.save_to_csv(headers, basic_filename, detail_filename, research_companies_path)
+            if basic_filename and detail_filename:
+                self.save_to_csv(headers, basic_filename, detail_filename, research_companies_path)
+        
+        finally:
+            # WebDriver 종료
+            self.close_driver()
 
     def save_to_csv(self, headers, basic_filename, detail_filename, research_companies_path=None):
         """수집된 데이터를 CSV 파일로 저장합니다."""

@@ -64,8 +64,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ ./src/
 COPY Snakefile .
 
-# 데이터 디렉토리 생성
+# 데이터 디렉토리 생성 및 Volume 설정
 RUN mkdir -p /app/crawled_data
+VOLUME ["/app/crawled_data"]
 
 # Snakemake로 전체 workflow 실행 (병렬성 1, 로그 출력)
 CMD ["snakemake", "--snakefile", "/app/Snakefile", "crawled_data/processed_job_data.csv", "--cores", "1", "--printshellcmds", "--keep-going", "--forceall"] 
