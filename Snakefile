@@ -9,21 +9,18 @@ RNDJOB_DETAIL = f"crawled_data/rndjob_detail_{CURRENT_TIME}.csv"
 MILITARY_BASIC = f"crawled_data/military_jobs_basic_{CURRENT_TIME}.csv"
 MILITARY_DETAIL = f"crawled_data/military_jobs_detail_{CURRENT_TIME}.csv"
 PROCESSED = "crawled_data/processed_job_data.csv"
-RESEARCH_COMPANIES = "crawled_data/research_companies.csv"
 
 rule all:
     input:
         PROCESSED
 
 rule rndjob_job_crawler:
-    input:
-        research_companies=RESEARCH_COMPANIES
     output:
         basic=RNDJOB_BASIC,
         detail=RNDJOB_DETAIL
     shell:
         """
-        python src/rndjob_job_crawler.py --basic-output {output.basic} --detail-output {output.detail} --research-companies {input.research_companies}
+        python src/rndjob_job_crawler.py --basic-output {output.basic} --detail-output {output.detail}
         """
 
 rule military_job_crawler:

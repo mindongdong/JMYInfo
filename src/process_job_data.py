@@ -258,81 +258,11 @@ def update_job_data(new_df):
         
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
-        # 기존 데이터 파일 경로 수정
-        existing_file_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'crawled_data', 'processed_job_data.csv')
+        # 모든 데이터를 신규로 처리
+        new_df['update_date'] = current_time
+        new_df['status'] = 'new'
         
-        if os.path.exists(existing_file_path):
-            try:
-                existing_df = pd.read_csv(existing_file_path)
-                
-                if existing_df.empty:
-                    print("[INFO] 기존 데이터가 비어있음. 모든 데이터를 신규로 처리.")
-                    new_df['update_date'] = current_time
-                    new_df['status'] = 'new'
-                    return new_df
-                
-                # 필수 컬럼 확인 (기존 데이터)
-                for col in ['company_name', 'post_name', 'source_info']:
-                    if col not in existing_df.columns:
-                        print(f"[WARNING] '{col}' 컬럼이 기존 데이터에 없습니다. 빈 컬럼 추가.")
-                        existing_df[col] = ''
-                
-                # update_date, status 컬럼이 기존 데이터에 없으면 추가
-                if 'update_date' not in existing_df.columns:
-                    existing_df['update_date'] = current_time
-                if 'status' not in existing_df.columns:
-                    existing_df['status'] = 'existing'
-                
-                # job_id 생성 (null 값 처리)
-                new_df['job_id'] = (
-                    new_df['company_name'].fillna('').astype(str) + '_' + 
-                    new_df['post_name'].fillna('').astype(str) + '_' + 
-                    new_df['source_info'].fillna('').astype(str)
-                )
-                existing_df['job_id'] = (
-                    existing_df['company_name'].fillna('').astype(str) + '_' + 
-                    existing_df['post_name'].fillna('').astype(str) + '_' + 
-                    existing_df['source_info'].fillna('').astype(str)
-                )
-                
-                # 신규 데이터: 기존에 없던 job_id
-                new_entries = new_df[~new_df['job_id'].isin(existing_df['job_id'])].copy()
-                new_entries['update_date'] = current_time
-                new_entries['status'] = 'new'
-                
-                # 기존 데이터: 새 데이터에도 있는 job_id (새 데이터의 내용으로 업데이트하되 update_date, status는 유지)
-                existing_job_ids = new_df[new_df['job_id'].isin(existing_df['job_id'])]['job_id']
-                updated_entries = new_df[new_df['job_id'].isin(existing_job_ids)].copy()
-                
-                # 기존 데이터에서 update_date와 status 정보 가져와서 유지
-                for idx, row in updated_entries.iterrows():
-                    job_id = row['job_id']
-                    existing_row = existing_df[existing_df['job_id'] == job_id].iloc[0]
-                    updated_entries.at[idx, 'update_date'] = existing_row.get('update_date', current_time)
-                    updated_entries.at[idx, 'status'] = existing_row.get('status', 'existing')
-                
-                # 더 이상 존재하지 않는 데이터: 새 데이터에 없는 job_id
-                unchanged_entries = existing_df[~existing_df['job_id'].isin(new_df['job_id'])].copy()
-                # 기존 데이터의 update_date와 status 유지
-                
-                final_df = pd.concat([new_entries, updated_entries, unchanged_entries], ignore_index=True)
-                final_df = final_df.drop('job_id', axis=1)
-                
-                print(f"[INFO] 신규: {len(new_entries)}, 기존 유지: {len(updated_entries)}, 삭제된 데이터: {len(unchanged_entries)}")
-                print("[DEBUG] update_job_data 입력 registration_date 샘플:", new_df['registration_date'].head(10).tolist())
-                print("[DEBUG] update_job_data 반환 registration_date 샘플:", final_df['registration_date'].head(10).tolist())
-                return final_df
-                
-            except Exception as e:
-                print(f"[ERROR] 기존 데이터 읽기 실패: {e}")
-                new_df['update_date'] = current_time
-                new_df['status'] = 'new'
-                return new_df
-        else:
-            print(f"[INFO] 기존 데이터 없음. 모두 신규로 처리: {len(new_df)} rows")
-            new_df['update_date'] = current_time
-            new_df['status'] = 'new'
-            return new_df
+        return new_df
             
     except Exception as e:
         print(f"[ERROR] update_job_data 예외: {e}")
